@@ -1,0 +1,46 @@
+import { Injectable } from '@angular/core';
+import { HttpEvent, HttpHandler, HttpInterceptor, HttpRequest, HttpResponse } from '@angular/common/http';
+import { Observable } from 'rxjs/Observable';
+import { Store } from "@ngrx/store";
+import { HOST } from "./API.service";
+
+@Injectable()
+export class ServerURLInterceptor implements HttpInterceptor {
+
+    private accessToken = null;
+
+    constructor(store: Store<any>) {
+        store.select("user").subscribe(user => {
+            if (user.loggedIn) {
+              this.accessToken = user.user.access_token;
+            } else {
+              this.accessToken = null;
+            }
+          });
+    }
+
+    intercept = ((req: HttpRequest<any>, next: HttpHandler): Observable<HttpEvent<any>> => {
+
+        if (!this.accessToken) return next.handle(req).catch((err) => {
+            this.errorMessage(err);
+            return Observable.of(err);
+        });
+        if (!req.url.startsWith(HOST)) return next.handle(req).catch((err) => {
+            this.errorMessage(err);
+            return Observable.of(err);
+        });;
+
+        // Pass on the cloned request instead of the original request.
+        const authReq = req.clone({ headers: req.headers.set('Authorization', `Bearer ${this.accessToken}`) });
+        return next.handle(authReq).catch((err) => {
+            this.errorMessage(err);
+            return Observable.of(err);
+        });;
+    }).bind(this);
+
+    errorMessage(data){
+        let messageObj = (<any>Object).values(JSON.parse(data.error));
+        if(messageObj.length)
+            alert(messageObj[0]);  
+    }
+}
