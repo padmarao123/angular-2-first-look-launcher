@@ -1,0 +1,70 @@
+import { AppState } from './../app.reducer';
+import { Injectable } from '@angular/core';
+import { HttpEvent, HttpHandler, HttpInterceptor, HttpRequest, HttpResponse } from '@angular/common/http';
+import { Observable } from 'rxjs/Observable';
+import { Store } from "@ngrx/store";
+import { HOST } from "./API.service";
+import { LocalStorageService } from './local-storage.service';
+
+@Injectable()
+export class ServerURLInterceptor implements HttpInterceptor {
+
+    private accessToken;
+    defaultLocation;
+    constructor(store: Store<any>,private localStorageService: LocalStorageService) {
+        store.select('user').subscribe(user => {
+            if (user) {
+                if (user.loggedIn) {
+                    this.accessToken = user.user.access_token;
+                    if(user.user.created_locations)
+                        this.defaultLocation = (user.user.created_locations.length)?user.user.created_locations[0]:'';
+                }
+            } else {
+                this.accessToken = null;
+            }
+        });
+    }
+
+    intercept = ((req: HttpRequest<any>, next: HttpHandler): Observable<HttpEvent<any>> => {
+
+        if (!this.accessToken) return next.handle(req).catch((err) => {
+            this.errorMessage(err);
+            return Observable.of(err);
+        });
+        if (!req.url.startsWith(HOST)) return next.handle(req).catch((err) => {
+            this.errorMessage(err);
+            return Observable.of(err);
+        });
+        
+        
+        let locationId =this.localStorageService.getItem('selectedLocation')?JSON.parse(this.localStorageService.getItem('selectedLocation')).id:(this.defaultLocation?this.defaultLocation.id:'');
+
+        var date:any = (new Date()).setHours(0,0,0,0);
+
+        if(req.method=='GET'){
+            req = req.clone({ params: req.params.set('location', locationId) });
+            req = req.clone({ params: req.params.set('current_date', date) });
+        }
+
+        
+        if(req.method=='POST'){
+            var newbody = req.body;
+            newbody['location'] = locationId;
+            newbody['current_date'] =date ;
+            req = req.clone({ body:newbody});
+        }
+
+        req = req.clone({ headers: req.headers.set('Authorization', `Bearer ${this.accessToken}`) });
+        return next.handle(req).catch((err) => {
+            this.errorMessage(err);
+            return Observable.of(err);
+        })
+    }).bind(this);
+
+    errorMessage(data){
+        let messageObj = Object.values(JSON.parse(data.error));
+        if(messageObj.length)
+            alert(messageObj[0]);  
+    }
+}
+
